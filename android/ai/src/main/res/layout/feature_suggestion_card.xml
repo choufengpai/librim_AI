@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright Librim AI Developers
+  Distributed under the BSD License
+  
+  2026-03-08 Librim AI Team
+  
+  特征建议卡片布局
+-->
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:padding="12dp">
+    
+    <!-- 类别图标 -->
+    <TextView
+        android:id="@+id/category_icon"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:gravity="center"
+        android:textSize="24sp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="❤️" />
+    
+    <!-- 标题 -->
+    <TextView
+        android:id="@+id/title_text"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/category_icon"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="检测到个人特征" />
+    
+    <!-- 特征键名 -->
+    <TextView
+        android:id="@+id/feature_key"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="4dp"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="12sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/category_icon"
+        app:layout_constraintTop_toBottomOf="@id/title_text"
+        tools:text="食物偏好" />
+    
+    <!-- 特征值 -->
+    <TextView
+        android:id="@+id/feature_value"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="2dp"
+        android:textColor="?android:attr/textColorPrimary"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/category_icon"
+        app:layout_constraintTop_toBottomOf="@id/feature_key"
+        tools:text="喜欢吃辣" />
+    
+    <!-- 置信度 -->
+    <TextView
+        android:id="@+id/confidence_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="?android:attr/textColorTertiary"
+        android:textSize="10sp"
+        app:layout_constraintStart_toEndOf="@id/category_icon"
+        android:layout_marginStart="8dp"
+        app:layout_constraintTop_toBottomOf="@id/feature_value"
+        tools:text="置信度: 85%" />
+    
+    <!-- 按钮容器 -->
+    <LinearLayout
+        android:id="@+id/button_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="end"
+        android:orientation="horizontal"
+        app:layout_constraintTop_toBottomOf="@id/confidence_text">
+        
+        <!-- 忽略按钮 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_ignore"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="忽略"
+            android:textSize="12sp" />
+        
+        <!-- 确认按钮 -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_confirm"
+            style="@style/Widget.MaterialComponents.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:layout_marginStart="8dp"
+            android:text="保存"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

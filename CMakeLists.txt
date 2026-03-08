@@ -31,6 +31,9 @@ option(ENABLE_THREADING "Enable threading for deployer" ON)
 option(ENABLE_TIMESTAMP "Embed timestamp to schema artifacts" ON)
 # Librim AI module options
 option(ENABLE_AI_MODULE "Enable Librim AI module" OFF)
+option(USE_SQLCIPHER "Use SQLCipher for encrypted storage" OFF)
+option(USE_SQLCIPHER "Use SQLCipher for encrypted storage" OFF)
+option(USE_SQLCIPHER "Use SQLCipher for encrypted storage" OFF)
 
 set(RIME_DATA_DIR "rime-data" CACHE STRING "Target directory for Rime data")
 set(RIME_PLUGINS_DIR "rime-plugins" CACHE STRING "Target directory for externally built Rime plugins")
