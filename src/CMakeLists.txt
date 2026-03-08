@@ -5,6 +5,10 @@ aux_source_directory(rime/config rime_config_src)
 aux_source_directory(rime/dict rime_dict_src)
 aux_source_directory(rime/gear rime_gears_src)
 aux_source_directory(rime/lever rime_levers_src)
+# Librim AI module
+if(ENABLE_AI_MODULE)
+  aux_source_directory(rime/ai rime_ai_src)
+endif()
 if(rime_plugins_library)
   aux_source_directory(../plugins rime_plugins_src)
 endif()
@@ -33,6 +37,10 @@ else()
       ${rime_levers_src}
       ${rime_plugins_src}
       ${rime_plugins_objs})
+  # Add AI module sources
+  if(ENABLE_AI_MODULE)
+    list(APPEND rime_src ${rime_ai_src})
+  endif()
 endif()
 
 set(rime_optional_deps "")
@@ -49,6 +57,11 @@ set(rime_core_deps
     ${YamlCpp_LIBRARY}
     ${CMAKE_THREAD_LIBS_INIT}
     ${rime_optional_deps})
+
+# AI module additional dependencies
+if(ENABLE_AI_MODULE)
+  list(APPEND rime_core_deps ${RIME_AI_JNI_LIBS})
+endif()
 set(rime_dict_deps
     ${LevelDb_LIBRARY}
     ${Marisa_LIBRARY})
