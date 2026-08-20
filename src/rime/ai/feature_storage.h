@@ -18,15 +18,13 @@
 #include <string>
 #include <vector>
 
-namespace rime {
-namespace ai {
-
-// ============================================================
-// 前向声明
-// ============================================================
-
+// SQLite 不透明类型前置声明
+// 必须在全局作用域，与 sqlite3.h 的 C 声明（struct 标签名）匹配
 struct sqlite3;
 struct sqlite3_stmt;
+
+namespace rime {
+namespace ai {
 
 // ============================================================
 // 存储配置

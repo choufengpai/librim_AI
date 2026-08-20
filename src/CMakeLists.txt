@@ -60,7 +60,8 @@ set(rime_core_deps
 
 # AI module additional dependencies
 if(ENABLE_AI_MODULE)
-  list(APPEND rime_core_deps ${RIME_AI_JNI_LIBS})
+  list(APPEND rime_core_deps ${RIME_AI_JNI_LIBS} ${RIME_AI_SQLITE_LIBS})
+  include_directories(${RIME_AI_SQLITE_INCLUDE_DIRS})
 endif()
 set(rime_dict_deps
     ${LevelDb_LIBRARY}

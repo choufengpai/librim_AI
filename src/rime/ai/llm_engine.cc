@@ -9,6 +9,7 @@
 //
 
 #include "llm_engine.h"
+#include <rime/common.h>  // LOG(INFO) / LOG(WARNING) / LOG(ERROR)
 #include <chrono>
 #include <sstream>
 #include <algorithm>

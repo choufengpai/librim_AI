@@ -32,8 +32,6 @@ option(ENABLE_TIMESTAMP "Embed timestamp to schema artifacts" ON)
 # Librim AI module options
 option(ENABLE_AI_MODULE "Enable Librim AI module" OFF)
 option(USE_SQLCIPHER "Use SQLCipher for encrypted storage" OFF)
-option(USE_SQLCIPHER "Use SQLCipher for encrypted storage" OFF)
-option(USE_SQLCIPHER "Use SQLCipher for encrypted storage" OFF)
 
 set(RIME_DATA_DIR "rime-data" CACHE STRING "Target directory for Rime data")
 set(RIME_PLUGINS_DIR "rime-plugins" CACHE STRING "Target directory for externally built Rime plugins")
@@ -44,6 +42,9 @@ endif(WIN32)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake")
 set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} "${PROJECT_SOURCE_DIR}")
+
+# Librim AI module configuration (SQLite/JNI discovery, compile definitions)
+include(${PROJECT_SOURCE_DIR}/cmake/RimeAiConfig.cmake)
 
 if (ENABLE_ASAN)
   set(asan_cflags "-fsanitize=address -fno-omit-frame-pointer")

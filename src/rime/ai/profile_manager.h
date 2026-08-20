@@ -47,27 +47,8 @@ struct ProfileConfig {
   int max_suggestions_per_day = 10;   // 每日最大建议次数
 };
 
-// ============================================================
-// 识别结果
-// ============================================================
-
-struct RecognitionResult {
-  bool has_feature = false;
-  PersonalFeature feature;
-  std::string suggestion_text;        // 给用户的建议文本
-  bool should_prompt_user = false;    // 是否应该提示用户
-};
-
-// ============================================================
-// 匹配结果
-// ============================================================
-
-struct MatchResult {
-  std::string intent;                 // 识别的意图
-  std::vector<PersonalFeature> matched_features;
-  std::vector<std::pair<std::string, double>> feature_relevance; // 特征ID -> 相关度
-  double overall_confidence = 0.0;
-};
+// 识别/匹配结果类型统一定义在 feature_types.h
+// （RecognitionResult / MatchResult，含 UI 扩展字段）
 
 // ============================================================
 // 回调类型

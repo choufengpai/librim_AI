@@ -12,7 +12,7 @@ if(ENABLE_AI_MODULE)
     find_package(SQLite3 QUIET)
     if(SQLite3_FOUND)
         message(STATUS "Found SQLite3: ${SQLite3_INCLUDE_DIRS}")
-        set(RIME_AI_SQLITE_LIBS SQLite::SQLite3)
+        set(RIME_AI_SQLITE_LIBS SQLite3::SQLite3)
     else()
         # 尝试使用 pkg-config
         find_package(PkgConfig QUIET)
@@ -61,6 +61,23 @@ if(ENABLE_AI_MODULE)
         # JNI 头文件由 Android NDK 提供
         # liblog 用于 Android 日志
         set(RIME_AI_JNI_LIBS log)
+    endif()
+    
+    if(NOT ANDROID)
+        # 桌面端构建：llm_jni.h 需要 jni.h，优先从 JAVA_HOME 直接获取
+        # （find_package(JNI) 对 JBR 等非标准 JDK 识别不佳）
+        if(DEFINED ENV{JAVA_HOME} AND EXISTS "$ENV{JAVA_HOME}/include/jni.h")
+            include_directories("$ENV{JAVA_HOME}/include" "$ENV{JAVA_HOME}/include/darwin")
+            message(STATUS "JNI headers from JAVA_HOME: $ENV{JAVA_HOME}")
+        else()
+            find_package(JNI QUIET)
+            if(JNI_FOUND)
+                message(STATUS "Found JNI (desktop): ${JNI_INCLUDE_DIRS}")
+                include_directories(${JNI_INCLUDE_DIRS})
+            else()
+                message(WARNING "JNI not found on desktop; set JAVA_HOME to a JDK for llm_jni.cc")
+            endif()
+        endif()
     endif()
     
     # ============================================================

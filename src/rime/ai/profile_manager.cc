@@ -612,9 +612,10 @@ void ProfileManager::UpdateLastProcessTime() {
   
   // 检查是否需要重置每日计数
   auto now = std::chrono::system_clock::now();
-  auto today = std::chrono::floor<std::chrono::days>(now);
-  auto today_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-      today.time_since_epoch()).count();
+  auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      now.time_since_epoch()).count();
+  // C++17 兼容：对齐到 UTC 当天零点（86400000 毫秒 = 1 天）
+  auto today_ms = now_ms - (now_ms % 86400000);
   
   if (day_start_time_ != today_ms) {
     day_start_time_ = today_ms;

@@ -9,6 +9,7 @@
 
 #include <string>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace rime {
@@ -63,6 +64,8 @@ struct RecognitionResult {
   bool has_feature = false;
   PersonalFeature feature;
   std::string error_message;
+  std::string suggestion_text;        // 给用户的建议文本
+  bool should_prompt_user = false;    // 是否应该提示用户
 };
 
 // 特征匹配结果
@@ -70,6 +73,8 @@ struct MatchResult {
   std::string intent;
   std::vector<PersonalFeature> matched_features;
   std::string error_message;
+  std::vector<std::pair<std::string, double>> feature_relevance;  // 特征ID -> 相关度
+  double overall_confidence = 0.0;
 };
 
 // 设备能力
