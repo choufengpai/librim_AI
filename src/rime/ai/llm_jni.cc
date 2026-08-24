@@ -81,47 +81,50 @@ bool LLMJNIBridge::Initialize(JavaVM* vm) {
     return false;
   }
   
-  // 缓存 MLCService 类和方法
-  jclass service_class = env->FindClass("com/osfans/trime/ai/MLCService");
+  // 缓存 LlamaService 类和方法
+  jclass service_class = env->FindClass("com/osfans/trime/ai/LlamaService");
   if (service_class) {
-    mlc_service_class_ = reinterpret_cast<jclass>(env->NewGlobalRef(service_class));
+    llama_service_class_ = reinterpret_cast<jclass>(env->NewGlobalRef(service_class));
     
-    method_inference_ = env->GetMethodID(mlc_service_class_, "inference",
+    method_inference_ = env->GetMethodID(llama_service_class_, "inference",
                                           "(Ljava/lang/String;J)V");
-    method_is_ready_ = env->GetMethodID(mlc_service_class_, "isModelReady", "()Z");
-    method_load_model_ = env->GetMethodID(mlc_service_class_, "loadModel",
+    method_is_ready_ = env->GetMethodID(llama_service_class_, "isModelReady", "()Z");
+    method_load_model_ = env->GetMethodID(llama_service_class_, "loadModel",
                                            "(Ljava/lang/String;)Z");
-    method_unload_model_ = env->GetMethodID(mlc_service_class_, "unloadModel", "()V");
+    method_unload_model_ = env->GetMethodID(llama_service_class_, "unloadModel", "()V");
     
     env->DeleteLocalRef(service_class);
+  } else {
+    LOGE("FindClass com/osfans/trime/ai/LlamaService failed");
+    env->ExceptionClear();
   }
   
   LOGI("LLMJNIBridge initialized successfully");
   return true;
 }
 
-void LLMJNIBridge::SetMLCService(jobject service) {
+void LLMJNIBridge::SetLlamaService(jobject service) {
   JNIEnv* env = GetJNIEnv();
   if (!env) return;
   
-  if (mlc_service_) {
-    env->DeleteGlobalRef(mlc_service_);
+  if (llama_service_) {
+    env->DeleteGlobalRef(llama_service_);
   }
   
-  mlc_service_ = env->NewGlobalRef(service);
-  LOGI("MLCService instance set");
+  llama_service_ = env->NewGlobalRef(service);
+  LOGI("LlamaService instance set");
 }
 
-void LLMJNIBridge::RequestInference(const std::string& prompt,
+int64_t LLMJNIBridge::RequestInference(const std::string& prompt,
                                      std::function<void(const InferenceResult&)> callback) {
   JNIEnv* env = GetJNIEnv();
-  if (!env || !mlc_service_ || !method_inference_) {
+  if (!env || !llama_service_ || !method_inference_) {
     LOGE("Cannot request inference: JNI not properly initialized");
     InferenceResult result;
     result.success = false;
     result.error_message = "JNI not initialized";
     if (callback) callback(result);
-    return;
+    return -1;
   }
   
   int64_t request_id = ++request_counter_;
@@ -132,12 +135,26 @@ void LLMJNIBridge::RequestInference(const std::string& prompt,
     callbacks_[request_id] = callback;
   }
   
-  // 调用 Java 方法
+  // 调用 Java 方法(异步,结果经 LLMNative.onInferenceResult 回调)
   jstring j_prompt = env->NewStringUTF(prompt.c_str());
-  env->CallVoidMethod(mlc_service_, method_inference_, j_prompt, (jlong)request_id);
+  env->CallVoidMethod(llama_service_, method_inference_, j_prompt, (jlong)request_id);
+  if (env->ExceptionCheck()) {
+    LOGE("Java inference call threw exception");
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+    env->DeleteLocalRef(j_prompt);
+    std::lock_guard<std::mutex> lock(callbacks_mutex_);
+    callbacks_.erase(request_id);
+    InferenceResult result;
+    result.success = false;
+    result.error_message = "Java inference call failed";
+    if (callback) callback(result);
+    return -1;
+  }
   env->DeleteLocalRef(j_prompt);
   
   LOGI("Inference request sent, id=%lld", (long long)request_id);
+  return request_id;
 }
 
 void LLMJNIBridge::OnInferenceResult(int64_t request_id,
@@ -170,22 +187,28 @@ void LLMJNIBridge::OnInferenceResult(int64_t request_id,
 
 bool LLMJNIBridge::IsModelReady() {
   JNIEnv* env = GetJNIEnv();
-  if (!env || !mlc_service_ || !method_is_ready_) {
+  if (!env || !llama_service_ || !method_is_ready_) {
     return false;
   }
   
-  return env->CallBooleanMethod(mlc_service_, method_is_ready_);
+  return env->CallBooleanMethod(llama_service_, method_is_ready_);
 }
 
 bool LLMJNIBridge::LoadModel(const std::string& model_path) {
   JNIEnv* env = GetJNIEnv();
-  if (!env || !mlc_service_ || !method_load_model_) {
+  if (!env || !llama_service_ || !method_load_model_) {
     LOGE("Cannot load model: JNI not properly initialized");
     return false;
   }
   
   jstring j_path = env->NewStringUTF(model_path.c_str());
-  bool result = env->CallBooleanMethod(mlc_service_, method_load_model_, j_path);
+  bool result = env->CallBooleanMethod(llama_service_, method_load_model_, j_path);
+  if (env->ExceptionCheck()) {
+    LOGE("Java loadModel threw exception");
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+    result = false;
+  }
   env->DeleteLocalRef(j_path);
   
   return result;
@@ -193,11 +216,15 @@ bool LLMJNIBridge::LoadModel(const std::string& model_path) {
 
 void LLMJNIBridge::UnloadModel() {
   JNIEnv* env = GetJNIEnv();
-  if (!env || !mlc_service_ || !method_unload_model_) {
+  if (!env || !llama_service_ || !method_unload_model_) {
     return;
   }
   
-  env->CallVoidMethod(mlc_service_, method_unload_model_);
+  env->CallVoidMethod(llama_service_, method_unload_model_);
+  if (env->ExceptionCheck()) {
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
 }
 
 DeviceCapability LLMJNIBridge::GetDeviceCapability() {
@@ -208,6 +235,10 @@ DeviceCapability LLMJNIBridge::GetDeviceCapability() {
   cap.has_gpu = true;
   cap.is_low_ram_device = false;
   return cap;
+}
+
+JNIEnv* LLMJNIBridge::GetJNIEnvForCallback() {
+  return GetJNIEnv();
 }
 
 void LLMJNIBridge::RegisterNativeMethods(JNIEnv* env) {
@@ -295,31 +326,37 @@ Java_com_osfans_trime_ai_LLMNative_inferAsync(JNIEnv* env, jobject thiz,
   std::string cpp_prompt(prompt_str);
   env->ReleaseStringUTFChars(prompt, prompt_str);
   
-  // 保存 Java 回调对象的全局引用
+  // 保存 Java 回调对象的全局引用(回调发生时重新获取 JNIEnv,
+  // 不能捕获当前线程局部的 env)
   jobject global_callback = env->NewGlobalRef(callback);
   
   // 创建 C++ 回调
-  auto cpp_callback = [env, global_callback](const InferenceResult& result) {
-    jclass callback_class = env->GetObjectClass(global_callback);
-    jmethodID on_result = env->GetMethodID(callback_class, "onResult",
+  auto cpp_callback = [global_callback](const InferenceResult& result) {
+    LLMJNIBridge& bridge = LLMJNIBridge::Instance();
+    JNIEnv* cb_env = bridge.GetJNIEnvForCallback();
+    if (!cb_env) {
+      LOGE("inferAsync callback: no JNIEnv");
+      return;
+    }
+    jclass callback_class = cb_env->GetObjectClass(global_callback);
+    jmethodID on_result = cb_env->GetMethodID(callback_class, "onResult",
                                             "(Ljava/lang/String;JZLjava/lang/String;)V");
     
-    jstring content = env->NewStringUTF(result.content.c_str());
+    jstring content = cb_env->NewStringUTF(result.content.c_str());
     jstring error = result.error_message.empty() ? nullptr : 
-                    env->NewStringUTF(result.error_message.c_str());
+                    cb_env->NewStringUTF(result.error_message.c_str());
     
-    env->CallVoidMethod(global_callback, on_result, content,
+    cb_env->CallVoidMethod(global_callback, on_result, content,
                         (jlong)result.elapsed_ms, result.success, error);
     
-    env->DeleteLocalRef(content);
-    if (error) env->DeleteLocalRef(error);
-    env->DeleteLocalRef(callback_class);
-    env->DeleteGlobalRef(global_callback);
+    cb_env->DeleteLocalRef(content);
+    if (error) cb_env->DeleteLocalRef(error);
+    cb_env->DeleteLocalRef(callback_class);
+    cb_env->DeleteGlobalRef(global_callback);
   };
   
   // 使用 LLMJNIBridge 请求推理
-  int64_t request_id = LLMJNIBridge::Instance().request_counter_;
-  LLMJNIBridge::Instance().RequestInference(cpp_prompt, cpp_callback);
+  int64_t request_id = LLMJNIBridge::Instance().RequestInference(cpp_prompt, cpp_callback);
   
   return (jlong)request_id;
 }
@@ -416,6 +453,27 @@ Java_com_osfans_trime_ai_LLMNative_getGenerationPrompt(JNIEnv* env, jobject thiz
   
   std::string prompt = PromptManager::Instance().GetGenerationPrompt(cpp_input, cpp_features);
   return env->NewStringUTF(prompt.c_str());
+}
+
+JNIEXPORT void JNICALL
+Java_com_osfans_trime_ai_LLMNative_setInferenceService(JNIEnv* env, jobject thiz,
+                                                        jobject service) {
+  // 由 Java 层 LlamaService.initialize() 调用:
+  // 1. 保存 JavaVM(桥接层线程附加用)
+  // 2. 缓存 LlamaService 实例(C++ -> Java 推理请求的入口)
+  JavaVM* vm = nullptr;
+  if (env->GetJavaVM(&vm) != JNI_OK || !vm) {
+    LOGE("setInferenceService: GetJavaVM failed");
+    return;
+  }
+  
+  if (!LLMJNIBridge::Instance().Initialize(vm)) {
+    LOGE("setInferenceService: LLMJNIBridge Initialize failed");
+    return;
+  }
+  
+  LLMJNIBridge::Instance().SetLlamaService(service);
+  LOGI("setInferenceService: bridge ready");
 }
 
 JNIEXPORT void JNICALL

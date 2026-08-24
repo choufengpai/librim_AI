@@ -16,3 +16,10 @@ node_modules/
 .cache/
 *.7z
 .DS_Store
+
+# librime-lua plugin (vendored via install-plugins.sh)
+plugins/lua/
+llama.cpp/
+
+# Qoder agent workspace (may contain local screenshots / scratch files)
+.qoder/

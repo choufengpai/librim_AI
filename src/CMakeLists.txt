@@ -8,6 +8,12 @@ aux_source_directory(rime/lever rime_levers_src)
 # Librim AI module
 if(ENABLE_AI_MODULE)
   aux_source_directory(rime/ai rime_ai_src)
+  # llama_jni.cc 仅在 Android + llama.cpp 可用时编译(其余平台为空编译单元,
+  # 缺少 llama.h 时必须排除,否则编译失败)
+  if(NOT (ANDROID AND RIME_AI_HAS_LLAMA))
+    list(REMOVE_ITEM rime_ai_src
+      "${CMAKE_CURRENT_SOURCE_DIR}/rime/ai/llama_jni.cc")
+  endif()
 endif()
 if(rime_plugins_library)
   aux_source_directory(../plugins rime_plugins_src)
@@ -60,7 +66,7 @@ set(rime_core_deps
 
 # AI module additional dependencies
 if(ENABLE_AI_MODULE)
-  list(APPEND rime_core_deps ${RIME_AI_JNI_LIBS} ${RIME_AI_SQLITE_LIBS})
+  list(APPEND rime_core_deps ${RIME_AI_JNI_LIBS} ${RIME_AI_SQLITE_LIBS} ${RIME_AI_LLAMA_LIBS})
   include_directories(${RIME_AI_SQLITE_INCLUDE_DIRS})
 endif()
 set(rime_dict_deps

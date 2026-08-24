@@ -1,9 +1,9 @@
 # Qwen 模型迁移调研报告
 
-> 文档版本: v1.1
+> 文档版本: v2.0
 > 创建日期: 2026-03-08
-> 最后更新: 2026-03-08
-> 状态: 调研完成，待决策
+> 最后更新: 2026-08-20
+> 状态: 已决策并实施（llama.cpp + Qwen3.5-2B，见第十一节）
 
 ---
 
@@ -298,3 +298,88 @@ user_input = "快速回答 /no_think"          # 快速响应
 |------|------|----------|
 | 2026-03-08 | v1.0 | 初始调研报告 |
 | 2026-03-08 | v1.1 | 新增 Qwen3 系列调研，推荐 Qwen3-1.7B 迁移方案 |
+| 2026-08-20 | v2.0 | **最终决策**:切换推理引擎至 llama.cpp，选型 Qwen3.5-2B Q4_K_M；记录集成方式与实施结果（见第十一节） |
+
+---
+
+## 十一、最终决策与实施（2026-08-20）
+
+### 11.1 决策结果
+
+**推理引擎: MLC-LLM → llama.cpp，模型: Qwen2.5-1.5B → Qwen3.5-2B-Instruct GGUF (Q4_K_M)**
+
+推翻 v1.1 推荐的「Qwen3-1.7B + MLC-LLM」方案，理由：
+
+1. **MLC-LLM 对 Qwen3.5 的支持始终未落地**（Gated DeltaNet 需 TVM 新算子，预估 2 周 - 2 个月，5 个月后仍无进展）
+2. **llama.cpp 已确认支持 Qwen3.5 全系**，且其 Android JNI 集成模式（官方 llama-android 示例）成熟
+3. **原有 MLC 集成本为 mock**（`MLCService.kt` 为桩实现，推理链路从未真实跑通），切换成本≈0
+4. Qwen3.5-2B 相比 Qwen3-1.7B：多模态、262K 上下文、线性注意力内存友好，更适合输入法长期演进
+
+### 11.2 模型选型
+
+| 项 | 值 |
+|------|------|
+| 模型 | Qwen3.5-2B-Instruct |
+| 量化 | Q4_K_M |
+| 文件 | `Qwen3.5-2B-Q4_K_M.gguf`（1.28 GB） |
+| 来源 | [unsloth/Qwen3.5-2B-GGUF](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF)（Apache 2.0） |
+| 运行内存预估 | ~2 GB（超限则降级 Qwen3.5-0.8B） |
+
+### 11.3 集成方式（已实施）
+
+#### Android 推理链路（真实）
+
+```
+Trime Java 层 (RimeAi.aiRecognizeFeature 等)
+  → ai_module_jni.cc (RimeAi 全套 JNI 实现)
+  → ProfileManager → PromptManager (业务 prompt)
+  → LLMEngine::Infer
+  → [Android] LLMJNIBridge → Java LlamaService.inference(prompt, requestId)
+  → llama_jni.cc nativeGenerate → llama.cpp (GGUF 推理)
+  → LLMNative.onInferenceResult 回调 C++ → 结果返回调用方
+```
+
+#### 代码变更清单
+
+| 文件 | 变更 |
+|------|------|
+| `android/ai/.../LlamaService.kt` | 新增，替代 MLCService.kt（已删除）：GGUF 加载、推理、流式输出 |
+| `android/ai/.../LLMNative.kt` | 新增 `setInferenceService` 声明（桥初始化入口） |
+| `src/rime/ai/llama_jni.cc` | 新增，llama.cpp JNI 桥（参考官方 llama-android 示例） |
+| `src/rime/ai/llm_jni.cc/.h` | MLCService → LlamaService 类名与桥初始化入口，修复回调线程问题 |
+| `src/rime/ai/llm_engine.cc` | Android 下 ProcessRequest/LoadModel 走 JNI 桥；桌面保留 MockInference |
+| `src/rime/ai/ai_module_jni.cc` | 新增，实现 RimeAi.kt 全套 JNI 声明（此前完全缺失） |
+| `src/rime/ai/llm_engine.cc` (PromptManager) | 三个业务 prompt 模板适配 thinking 模型输出约束 |
+| `cmake/RimeAiConfig.cmake` + `src/CMakeLists.txt` | Android 构建集成 llama.cpp 子项目（vendored 于 `llama.cpp/`，gitignored） |
+
+#### Qwen3.5 ChatML 模板适配
+
+- `llama_jni.cc` 内置 ChatML 拼装（`<|im_start|>...<|im_end|>`，兼容 Qwen2/Qwen2.5/Qwen3/Qwen3.5）
+- **低延迟场景默认关闭思考模式**：`LlamaConfig.noThink = true`，在 user 消息末尾附加 `/no_think`
+- 兕底：输出后处理剥离 `<think>...</think>` 块（`/no_think` 未生效时保证返回纯文本）
+
+### 11.4 部署方式（2026-08-20 真机验证后更新）
+
+1. 模型不进 APK（体积考虑），通过 stdin 流式写入应用**内部存储**（免 root，debuggable 包适用）：
+   ```bash
+   adb shell "run-as com.osfans.trime.debug sh -c 'mkdir -p files/models \
+     && cat > files/models/qwen3.5-2b-instruct-q4_k_m.gguf'" \
+     < ~/Developer/models/Qwen3.5-2B-Q4_K_M.gguf
+   ```
+2. **不要用 `adb push` 到外部私有目录**：Android 11+ scoped storage 下，push 的文件 FUSE 属主为 shell，
+   app 进程 `stat` 即被拒（实测 vivo Android 16 `run-as` 下 `Permission denied`），
+   表现为 `File.exists()` 返回 false、懒加载时模型加载失败。内部存储 `run-as` 流式写入后属主为 app，可正常读写。
+3. `TrimeApplication.initializeLibrimAi()` 模型路径为 external→internal 双 fallback：
+   外部私有目录 `files/models/`（用户可放置）→ 内部 `files/models/`（开发期 adb 部署）；
+   选中的路径经 `aiInit` 的 `model_path` 传入（兼容 debug 包名后缀）
+4. 桌面（macOS/Linux）构建仍为 MockInference，仅链路联调用；真实验证在 Android 真机
+5. APK 编译产物：`com.osfans.trime-2a79963-arm64-v8a-debug.apk`（41.7MB，librime_jni.so 静态链入 llama.cpp + vendored SQLite 3.53.4）
+6. 真机验证（vivo V2454A / Android 16）：`model present: true`，aiInit success，
+   LLMJNIBridge/LlamaService 桥注册链路全部打通（logcat LibrimAI_* 系列日志）
+
+### 11.5 待验证项（真机验收，随阶段 5）
+
+- [ ] 特征识别返回真实 LLM 结果（非 mock 固定值）
+- [ ] 单次推理延迟（PRD 目标：< 3s）
+- [ ] 内存占用实测（超 2GB 预算则降级 Qwen3.5-0.8B）
+- [ ] `/no_think` 生效确认（输出无 `<think>` 块）

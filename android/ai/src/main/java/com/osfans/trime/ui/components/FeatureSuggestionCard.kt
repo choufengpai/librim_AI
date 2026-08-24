@@ -13,14 +13,16 @@ package com.osfans.trime.ui.components
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.content.Context
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.LayoutInflater
 import android.view.View
 import android.view.animation.DecelerateInterpolator
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
-import com.google.android.material.card.MaterialCardView
-import com.google.android.material.button.MaterialButton
+import com.osfans.trime.R
 import com.osfans.trime.core.FeatureInfo
 import com.osfans.trime.core.FeatureRecognitionResult
 
@@ -31,7 +33,7 @@ class FeatureSuggestionCard @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
-) : MaterialCardView(context, attrs, defStyleAttr) {
+) : FrameLayout(context, attrs, defStyleAttr) {
     
     private val container: View
     private val categoryIcon: TextView
@@ -39,8 +41,8 @@ class FeatureSuggestionCard @JvmOverloads constructor(
     private val featureKeyText: TextView
     private val featureValueText: TextView
     private val confidenceText: TextView
-    private val confirmButton: MaterialButton
-    private val ignoreButton: MaterialButton
+    private val confirmButton: Button
+    private val ignoreButton: Button
     
     private var onConfirmListener: ((FeatureInfo) -> Unit)? = null
     private var onIgnoreListener: (() -> Unit)? = null
@@ -48,6 +50,11 @@ class FeatureSuggestionCard @JvmOverloads constructor(
     private var currentFeature: FeatureInfo? = null
     
     init {
+        // 白底圆角卡片背景(替代 MaterialCardView,避免引入 material 依赖)
+        background = GradientDrawable().apply {
+            setColor(Color.WHITE)
+            cornerRadius = 12 * resources.displayMetrics.density
+        }
         // 加载布局
         container = LayoutInflater.from(context)
             .inflate(R.layout.feature_suggestion_card, this, true)

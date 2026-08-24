@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright Librim AI Developers
+  Distributed under the BSD License
+
+  2026-03-08 Librim AI Team
+
+  隐私模式指示器配色
+-->
+<resources>
+    <!-- 指示器主色(圆点/图标) -->
+    <color name="privacy_indicator_color">#FF5252</color>
+    <!-- 指示器背景 -->
+    <color name="privacy_background_color">#33FF5252</color>
+    <!-- 指示器文字 -->
+    <color name="privacy_text_color">#B71C1C</color>
+</resources>

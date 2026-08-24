@@ -119,7 +119,7 @@ object RimeAi : RimeAiApi {
     // 加载 native 库（由 Rime 主模块加载）
     init {
         try {
-            System.loadLibrary("rime")
+            System.loadLibrary("rime_jni")
         } catch (e: UnsatisfiedLinkError) {
             // 开发阶段可能还未编译
         }

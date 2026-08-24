@@ -93,21 +93,24 @@
         app:layout_constraintTop_toBottomOf="@id/confidence_text">
         
         <!-- 忽略按钮 -->
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/btn_ignore"
-            style="@style/Widget.MaterialComponents.Button.TextButton"
+            style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"
             android:layout_height="36dp"
+            android:minWidth="0dp"
             android:text="忽略"
             android:textSize="12sp" />
         
         <!-- 确认按钮 -->
-        <com.google.android.material.button.MaterialButton
+        <Button
             android:id="@+id/btn_confirm"
-            style="@style/Widget.MaterialComponents.Button"
             android:layout_width="wrap_content"
             android:layout_height="36dp"
             android:layout_marginStart="8dp"
+            android:minWidth="0dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
             android:text="保存"
             android:textSize="12sp" />
     </LinearLayout>

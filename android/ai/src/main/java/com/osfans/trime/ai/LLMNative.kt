@@ -49,7 +49,7 @@ object LLMNative {
         // 加载 native 库
         // 在实际集成时需要确保 librime 已编译包含 AI 模块
         try {
-            System.loadLibrary("rime")
+            System.loadLibrary("rime_jni")
         } catch (e: UnsatisfiedLinkError) {
             // 开发阶段可能还未编译
         }
@@ -161,8 +161,19 @@ object LLMNative {
     // ============================================================
     
     /**
+     * 注册推理服务实例(LlamaService)
+     * 由 LlamaService.initialize() 调用:
+     * 1. C++ 层保存 JavaVM 并初始化 LLMJNIBridge
+     * 2. 缓存 LlamaService 实例,作为 C++ -> Java 推理请求入口
+     * 实现位于 llm_jni.cc: Java_com_osfans_trime_ai_LLMNative_setInferenceService
+     */
+    @JvmStatic
+    external fun setInferenceService(service: Any)
+    
+    /**
      * 推理结果回调
-     * 此方法由 C++ 层调用，用于通知 Java 层推理完成
+     * 此方法由 Java 层 LlamaService 调用(llama.cpp 推理完成后),
+     * 通知 C++ 层推理完成
      */
     @JvmStatic
     external fun onInferenceResult(

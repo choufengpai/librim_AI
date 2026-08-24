@@ -5,15 +5,21 @@
 // 2026-03-06 Librim AI Team
 //
 // LLM 引擎实现
-// 当前为框架实现，MLC-LLM 集成将在 T005 完成后添加
+// 桌面(macOS/Linux): MockInference(链路联调用)
+// Android: 经 LLMJNIBridge 调用 Java LlamaService(llama.cpp 真实推理)
 //
 
 #include "llm_engine.h"
 #include <rime/common.h>  // LOG(INFO) / LOG(WARNING) / LOG(ERROR)
 #include <chrono>
+#include <future>
 #include <sstream>
 #include <algorithm>
 #include <ctime>
+
+#ifdef __ANDROID__
+#include "llm_jni.h"
+#endif
 
 namespace rime {
 namespace ai {
@@ -23,13 +29,11 @@ namespace ai {
 // ============================================================
 
 struct LLMEngine::Impl {
-  // TODO: 集成 MLC-LLM 后添加实际模型句柄
-  // tvm::runtime::Module model;
-  // tvm::runtime::PackedFunc inference_func;
+  // TODO: 集成桌面端推理后端后添加实际模型句柄
   
   bool model_loaded = false;
   
-  // 模拟推理（用于测试）
+  // 模拟推理（桌面测试用）
   InferenceResult MockInference(const std::string& prompt) {
     InferenceResult result;
     auto start = std::chrono::high_resolution_clock::now();
@@ -57,6 +61,36 @@ struct LLMEngine::Impl {
     
     return result;
   }
+  
+#ifdef __ANDROID__
+  // Android: 经 JNI 桥调用 Java LlamaService(llama.cpp)
+  // RequestInference 是异步的(Java 侧协程),此处同步等待结果
+  InferenceResult BridgeInference(const std::string& prompt, int64_t timeout_ms) {
+    InferenceResult result;
+    std::promise<InferenceResult> promise;
+    std::future<InferenceResult> future = promise.get_future();
+    
+    int64_t request_id = LLMJNIBridge::Instance().RequestInference(
+        prompt,
+        [&promise](const InferenceResult& r) { promise.set_value(r); });
+    
+    if (request_id < 0) {
+      // 桥未初始化或调用失败,RequestInference 已同步回调
+      // (若已同步回调过,此处 future 已就绪)
+    }
+    
+    // 等待 Java 侧回调(超时保护: 推理超时 + 5s 余量)
+    int64_t wait_ms = timeout_ms > 0 ? timeout_ms + 5000 : 60000;
+    if (future.wait_for(std::chrono::milliseconds(wait_ms)) !=
+        std::future_status::ready) {
+      result.success = false;
+      result.error_message = "JNI inference timeout";
+      return result;
+    }
+    
+    return future.get();
+  }
+#endif
 };
 
 // ============================================================
@@ -93,10 +127,10 @@ bool LLMEngine::Initialize(const LLMConfig& config) {
   }
   
   // 如果配置了预加载，加载模型
+  // (Android 下若桥未就绪或模型尚未 push 到手机,允许延迟到首次推理时重试)
   if (config_.preload_model) {
     if (!LoadModel()) {
-      LOG(ERROR) << "Failed to preload model.";
-      return false;
+      LOG(WARNING) << "Failed to preload model, will retry on first inference.";
     }
   }
   
@@ -187,20 +221,26 @@ bool LLMEngine::LoadModel() {
     return true;
   }
   
-  // TODO: 实际模型加载逻辑
-  // 需要集成 MLC-LLM SDK
-  // 1. 加载模型文件
-  // 2. 初始化 TVM runtime
-  // 3. 配置 GPU 加速
-  
   LOG(INFO) << "Loading model from: " << config_.model_path;
   
-  // 模拟加载成功
+#ifdef __ANDROID__
+  // Android: 经 JNI 桥调用 Java LlamaService.loadModel(真实加载 GGUF)
+  if (!LLMJNIBridge::Instance().LoadModel(config_.model_path)) {
+    LOG(ERROR) << "Failed to load model via JNI bridge.";
+    return false;
+  }
+  impl_->model_loaded = true;
+  UpdateStatus(LLMStatus::kNormal);
+  LOG(INFO) << "Model loaded successfully (via llama.cpp).";
+  return true;
+#else
+  // 桌面: 无推理后端,标记为已加载以便 MockInference 链路联调
   impl_->model_loaded = true;
   UpdateStatus(LLMStatus::kNormal);
   
   LOG(INFO) << "Model loaded successfully.";
   return true;
+#endif
 }
 
 void LLMEngine::UnloadModel() {
@@ -208,7 +248,10 @@ void LLMEngine::UnloadModel() {
     return;
   }
   
-  // TODO: 实际模型卸载逻辑
+#ifdef __ANDROID__
+  // Android: 卸载 Java 侧 llama.cpp 模型(释放内存)
+  LLMJNIBridge::Instance().UnloadModel();
+#endif
   
   impl_->model_loaded = false;
   UpdateStatus(LLMStatus::kNotLoaded);
@@ -216,7 +259,12 @@ void LLMEngine::UnloadModel() {
 }
 
 bool LLMEngine::IsModelLoaded() const {
+#ifdef __ANDROID__
+  // Android: 以 Java 侧真实状态为准
+  return LLMJNIBridge::Instance().IsModelReady();
+#else
   return impl_->model_loaded;
+#endif
 }
 
 // ============================================================
@@ -310,18 +358,31 @@ InferenceResult LLMEngine::ProcessRequest(const std::string& prompt) {
   auto start = std::chrono::high_resolution_clock::now();
   
   try {
-    // TODO: 实际推理逻辑
-    // 当前使用模拟推理
+#ifdef __ANDROID__
+    // Android: 经 JNI 桥调用 Java LlamaService(llama.cpp 真实推理)
+    result = impl_->BridgeInference(prompt, config_.timeout_ms);
+#else
+    // 桌面: 模拟推理(链路联调)
     result = impl_->MockInference(prompt);
+#endif
     
     // 检查是否超时
-    if (result.elapsed_ms > config_.timeout_ms) {
+    if (result.success && result.elapsed_ms > config_.timeout_ms) {
       result.success = false;
       result.error_message = "Inference timeout";
     }
     
-    // 重置连续失败计数
-    consecutive_failures_ = 0;
+    if (result.success) {
+      // 重置连续失败计数
+      consecutive_failures_ = 0;
+    } else {
+      // 增加失败计数，可能触发降级
+      consecutive_failures_++;
+      if (consecutive_failures_ >= kMaxConsecutiveFailures) {
+        UpdateStatus(LLMStatus::kDegraded);
+        LOG(WARNING) << "LLMEngine entering degraded mode due to repeated failures.";
+      }
+    }
     
   } catch (const std::exception& e) {
     result.success = false;
@@ -403,7 +464,7 @@ std::string PromptManager::GetRecognitionPrompt(const std::string& user_input) {
 如果不包含特征，返回：
 {"has_feature": false}
 
-只返回 JSON，不要其他内容。)";
+只返回 JSON，不要其他内容。直接输出结果，不要思考过程。)";
   }
   
   return oss.str();
@@ -430,7 +491,7 @@ std::string PromptManager::GetMatchPrompt(const std::string& user_input,
 请以 JSON 格式返回：
 {"intent": "意图描述", "matched_features": [{"id": "特征ID", "relevance": 0.0-1.0}]}
 
-只返回 JSON，不要其他内容。)";
+只返回 JSON，不要其他内容。直接输出结果，不要思考过程。)";
   }
   
   return oss.str();
@@ -457,7 +518,7 @@ std::string PromptManager::GetGenerationPrompt(const std::string& original_input
 请以 JSON 格式返回：
 {"enhanced_content": "增强后的内容", "explanation": "增强说明", "confidence": 0.0-1.0}
 
-只返回 JSON，不要其他内容。)";
+只返回 JSON，不要其他内容。直接输出结果，不要思考过程。)";
   }
   
   return oss.str();

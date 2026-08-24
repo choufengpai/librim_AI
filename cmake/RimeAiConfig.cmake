@@ -63,6 +63,34 @@ if(ENABLE_AI_MODULE)
         set(RIME_AI_JNI_LIBS log)
     endif()
     
+    # ============================================================
+    # llama.cpp 配置（Android 推理引擎）
+    # 源码位于仓库根目录 llama.cpp/（vendored，见 .gitignore）
+    # 静态链入或动态链接跟随全局 BUILD_SHARED_LIBS
+    # ============================================================
+    
+    set(RIME_AI_HAS_LLAMA OFF)
+    if(ANDROID)
+        set(LLAMA_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/llama.cpp" CACHE PATH "llama.cpp source directory")
+        if(EXISTS "${LLAMA_CPP_DIR}/CMakeLists.txt" AND EXISTS "${LLAMA_CPP_DIR}/include/llama.h")
+            message(STATUS "Enabling llama.cpp integration: ${LLAMA_CPP_DIR}")
+            # 精简构建：只要核心库，不要工具/示例/测试
+            set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+            set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+            set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+            set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+            set(LLAMA_CURL OFF CACHE BOOL "" FORCE)
+            # NDK 环境避免 OpenMP 依赖问题
+            set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+            add_subdirectory("${LLAMA_CPP_DIR}" "${CMAKE_BINARY_DIR}/llama.cpp-build" EXCLUDE_FROM_ALL)
+            set(RIME_AI_LLAMA_LIBS llama)
+            set(RIME_AI_HAS_LLAMA ON)
+            include_directories("${LLAMA_CPP_DIR}/include")
+        else()
+            message(WARNING "llama.cpp not found at ${LLAMA_CPP_DIR}: llama_jni.cc will be excluded from build")
+        endif()
+    endif()
+    
     if(NOT ANDROID)
         # 桌面端构建：llm_jni.h 需要 jni.h，优先从 JAVA_HOME 直接获取
         # （find_package(JNI) 对 JBR 等非标准 JDK 识别不佳）
@@ -94,5 +122,6 @@ if(ENABLE_AI_MODULE)
     message(STATUS "  - SQLite3: ${SQLite3_FOUND}")
     message(STATUS "  - SQLCipher: ${USE_SQLCIPHER}")
     message(STATUS "  - Android: ${ANDROID}")
+    message(STATUS "  - llama.cpp: ${RIME_AI_HAS_LLAMA}")
     
 endif(ENABLE_AI_MODULE)

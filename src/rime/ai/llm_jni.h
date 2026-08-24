@@ -4,8 +4,8 @@
 //
 // 2026-03-08 Librim AI Team
 //
-// LLM JNI 桥接层
-// 提供 C++ 与 Java (MLC-LLM mlc4j) 之间的通信接口
+//  LLM JNI 桥接层
+//  提供 C++ 与 Java (LlamaService / llama.cpp) 之间的通信接口
 //
 
 #ifndef RIME_AI_LLM_JNI_H_
@@ -36,15 +36,16 @@ public:
   // @return true 成功
   bool Initialize(JavaVM* vm);
   
-  // 设置 MLC-LLM 服务实例
-  // @param service MLCService Java 对象的全局引用
-  void SetMLCService(jobject service);
+  // 设置推理服务实例(LlamaService)
+  // @param service LlamaService Java 对象的全局引用
+  void SetLlamaService(jobject service);
   
   // 调用 Java 层推理
   // @param prompt 输入提示词
   // @param callback 结果回调（从 Java 层回调）
-  void RequestInference(const std::string& prompt,
-                        std::function<void(const InferenceResult&)> callback);
+  // @return 请求 ID
+  int64_t RequestInference(const std::string& prompt,
+                           std::function<void(const InferenceResult&)> callback);
   
   // 从 Java 层接收推理结果
   // @param request_id 请求 ID
@@ -72,6 +73,9 @@ public:
   // 获取设备能力
   DeviceCapability GetDeviceCapability();
   
+  // 获取 JNIEnv(供异步回调线程使用,必要时附加到 JVM)
+  JNIEnv* GetJNIEnvForCallback();
+  
   // JNI 回调注册
   void RegisterNativeMethods(JNIEnv* env);
 #endif
@@ -91,8 +95,8 @@ private:
   // Java 虚拟机指针
   JavaVM* java_vm_ = nullptr;
   
-  // MLCService Java 对象
-  jobject mlc_service_ = nullptr;
+  // LlamaService Java 对象
+  jobject llama_service_ = nullptr;
   
   // 推理回调映射
   std::unordered_map<int64_t, std::function<void(const InferenceResult&)>> callbacks_;
@@ -102,7 +106,7 @@ private:
   std::atomic<int64_t> request_counter_{0};
   
   // 类引用
-  jclass mlc_service_class_ = nullptr;
+  jclass llama_service_class_ = nullptr;
   jmethodID method_inference_ = nullptr;
   jmethodID method_is_ready_ = nullptr;
   jmethodID method_load_model_ = nullptr;
@@ -176,6 +180,11 @@ JNIEXPORT jstring JNICALL
 Java_com_osfans_trime_ai_LLMNative_getGenerationPrompt(JNIEnv* env, jobject thiz,
                                                         jstring input,
                                                         jstring features);
+
+// 注册推理服务实例(LlamaService),并初始化 JavaVM 桥
+JNIEXPORT void JNICALL
+Java_com_osfans_trime_ai_LLMNative_setInferenceService(JNIEnv* env, jobject thiz,
+                                                        jobject service);
 
 // 推理结果回调（从 Java 层调用）
 JNIEXPORT void JNICALL

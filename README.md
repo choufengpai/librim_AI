@@ -1,149 +1,128 @@
-<meta charset="UTF-8">
+# Librim AI
 
-RIME: Rime Input Method Engine
-===
-![Build status](https://github.com/rime/librime/actions/workflows/commit-ci.yml/badge.svg)
-[![GitHub release](https://img.shields.io/github/release/rime/librime.svg)](https://github.com/rime/librime/releases)
-[![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+> ⚠️ **本项目正在进行中（Work in Progress）**：功能尚未稳定，接口与架构可能随时调整，暂不适合生产环境使用。
 
-Rime with your keystrokes.
+**Librim AI** 是基于 [librime](https://github.com/rime/librime)（中州韵输入法引擎）的实验性分支，目标是在完全本地、离线的环境下，为输入法引入大语言模型（LLM）驱动的智能能力，同时严格保护用户隐私。
 
-Project home
----
-[rime.im](https://rime.im)
+## 项目概要
 
-License
----
-[The 3-Clause BSD License](https://opensource.org/licenses/BSD-3-Clause)
+传统输入法只负责"把按键变成文字"，Librim AI 希望输入法更进一步——在**设备端本地**理解用户，成为用户与 AI 应用之间的智能桥梁：
 
-Features
-===
-  - A modular, extensible input method engine in cross-platform C++ code,
-    built on top of open-source technologies
-  - Covering features found in a large variety of Chinese input methods,
-    either shape-based or phonetic-based
-  - Built with native support for Traditional Chinese, conversion to Simplified
-    Chinese and other regional standards via OpenCC
-  - Rime input schema, a DSL in YAML syntax for fast trying out innovative ideas
-    of input method design
-  - Spelling Algebra, a mechanism to create variant spelling, especially useful
-    for Chinese dialects
-  - Support for chord-typing with a generic Qwerty keyboard
+| 功能 | 说明 | 状态 |
+|------|------|------|
+| **个人特征识别** | 在日常输入中本地识别个人特征（偏好、习惯、近期事项等），以非侵入式卡片询问用户是否存入个人信息库 | 🚧 开发中 |
+| **智能输入增强** | 在 AI 对话类应用中，自动匹配个人特征库，一键生成补充了个人背景的增强 Prompt | 🚧 开发中 |
+| **无痕模式** | 一键关闭所有特征识别与记录，保护隐私输入场景 | 🚧 开发中 |
 
-Install
-===
-Follow the instructions to build librime on platforms other than Linux:
-  - [macOS](https://github.com/rime/librime/tree/master/README-mac.md)
-  - [Windows](https://github.com/rime/librime/tree/master/README-windows.md)
+核心原则：
 
-Build dependencies
----
-  - compiler with C++17 support
-  - cmake>=3.12
-  - libboost>=1.74
-  - libglog>=0.7 (optional)
-  - libleveldb
-  - libmarisa
-  - libopencc>=1.0.2
-  - libyaml-cpp>=0.5
-  - libgtest (optional)
+- **全本地推理**：LLM 推理完全在设备端进行，输入内容不出设备
+- **用户完全可控**：所有特征需用户确认后才会保存，可查看、编辑、删除
+- **加密存储**：个人特征库使用 SQLCipher 加密持久化
 
-Runtime dependencies
----
-  - libboost
-  - libglog (optional)
-  - libleveldb
-  - libmarisa
-  - libopencc
-  - libyaml-cpp
+## 技术方案
 
-Build and install on Linux
----
+### 技术选型
+
+| 类别 | 方案 | 说明 |
+|------|------|------|
+| 输入法引擎 | librime (C++17) | 上游核心，模块化插件架构 |
+| 推理引擎 | [llama.cpp](https://github.com/ggml-org/llama.cpp)（vendored） | 端侧 GGUF 推理，Android JNI 集成成熟 |
+| 本地模型 | Qwen3.5-2B-Instruct（Q4_K_M 量化，~1.3GB） | Gated DeltaNet 混合架构，262K 上下文 |
+| 特征存储 | SQLite + SQLCipher | 加密本地数据库 |
+| 首期平台 | Android（[Trime](https://github.com/osfans/trime) 前端） | macOS / Windows / Linux / iOS 后续扩展 |
+
+> 注：早期方案为 MLC-LLM + Qwen2.5-1.5B，因 MLC-LLM 对 Qwen3.5 新架构的支持未落地，已迁移至 llama.cpp，详见 [docs/MODEL_MIGRATION_Qwen35.md](docs/MODEL_MIGRATION_Qwen35.md)。
+
+### 系统架构
+
+```
+┌────────────────────────────────────────────────────────┐
+│             Trime 输入法前端 (Android / Kotlin)         │
+│   LlamaService · RimeAi · FeatureSuggestionCard · ...  │
+└──────────────────────────┬─────────────────────────────┘
+                           │ JNI
+┌──────────────────────────▼─────────────────────────────┐
+│              librime AI 模块 (src/rime/ai/)             │
+│  ┌───────────────┐ ┌──────────────┐ ┌───────────────┐  │
+│  │ ProfileManager│ │SceneDetector │ │ FeatureStorage│  │
+│  │ (识别/匹配/生成)│ │ (AI 场景识别) │ │ (SQLite 加密)  │  │
+│  └───────┬───────┘ └──────────────┘ └───────────────┘  │
+│  ┌───────▼───────┐ ┌──────────────┐                     │
+│  │  LLMEngine    │ │PromptManager │                     │
+│  │ (推理引擎封装) │ │ (Prompt 模板) │                     │
+│  └───────┬───────┘ └──────────────┘                     │
+│  ┌───────▼────────────────────────┐                     │
+│  │ LLMJNIBridge → LlamaService    │  ← Android 推理桥    │
+│  │ → llama_jni.cc → llama.cpp     │                     │
+│  └────────────────────────────────┘                     │
+└──────────────────────────────────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────┐
+│                librime 核心引擎（上游）                  │
+│        Speller · Dictionary · Translator · Filter       │
+└──────────────────────────────────────────────────────────┘
+```
+
+依赖方向严格单向：`JNI → ProfileManager/SceneDetector → LLMEngine → LLMJNIBridge → Java LlamaService → llama.cpp`。桌面平台（macOS/Linux）当前保留 Mock 推理用于链路联调，真实推理在 Android 真机验证。
+
+### 推理链路（Android）
+
+```
+RimeAi.aiRecognizeFeature()
+  → ai_module_jni.cc          # RimeAi 全套 JNI 实现
+  → ProfileManager            # 业务编排：识别/匹配/生成
+  → PromptManager             # Prompt 模板（ChatML，默认关闭思考模式降延迟）
+  → LLMEngine::Infer
+  → LLMJNIBridge              # 请求 ID → 异步回调映射
+  → LlamaService.inference()  # Kotlin 侧
+  → llama_jni.cc              # llama.cpp JNI 桥
+  → llama.cpp (GGUF 推理)
+  → 回调逐级返回
+```
+
+推理请求由工作线程串行处理（`std::queue` + `condition_variable`），空闲超时自动卸载模型以控制内存。
+
+## 仓库结构
+
+```
+├── src/rime/            # librime 核心引擎（算法、词典、齿轮组件等）
+│   └── rime/ai/         # ★ AI 模块：LLM 引擎、特征管理、场景识别、JNI 桥
+├── android/ai/          # ★ Android 端：LlamaService、RimeAi 接口、建议卡片 UI
+├── llama.cpp/           # 推理引擎（vendored，gitignored，需自行获取）
+├── plugins/             # librime 插件（lua 等）
+├── data/                # 输入方案数据（minimal / rime-ice / test）
+├── docs/                # ★ 项目文档（PRD、技术方案、API、测试、迁移报告）
+├── cmake/               # CMake 模块（含 RimeAiConfig.cmake）
+├── tools/               # 命令行工具（console、deployer、dict_manager 等）
+└── test/                # 核心库单元测试（GoogleTest）
+```
+
+## 文档索引
+
+| 文档 | 内容 |
+|------|------|
+| [docs/AI_FEATURES_PRD.md](docs/AI_FEATURES_PRD.md) | 产品需求：三大 AI 功能的详细规格 |
+| [docs/TECHNICAL_SOLUTION.md](docs/TECHNICAL_SOLUTION.md) | 技术方案：模块设计、数据流、接口定义 |
+| [docs/API_SPECIFICATION.md](docs/API_SPECIFICATION.md) | API 规格说明 |
+| [docs/MODEL_MIGRATION_Qwen35.md](docs/MODEL_MIGRATION_Qwen35.md) | 模型选型调研与 llama.cpp 迁移决策 |
+| [docs/LIBRIME_ANALYSIS.md](docs/LIBRIME_ANALYSIS.md) | librime 源码分析 |
+| [docs/TEST_PLAN.md](docs/TEST_PLAN.md) | 测试方案 |
+| [docs/TODO.md](docs/TODO.md) | 任务清单与进度 |
+
+## 构建
+
+上游 librime 的通用构建说明见 [README-mac.md](README-mac.md) 与 [README-windows.md](README-windows.md)，Linux 下：
+
 ```
 make
 sudo make install
 ```
 
-Packaging status
----
-[![Packaging status](https://repology.org/badge/vertical-allrepos/librime.svg?columns=4&minversion=1.10.0)](https://repology.org/project/librime/versions)
+Android (Trime) 集成需额外获取 llama.cpp 子项目与 GGUF 模型文件，具体见 [docs/MODEL_MIGRATION_Qwen35.md](docs/MODEL_MIGRATION_Qwen35.md) 第十一节。
 
-Frontends
-===
+## 许可证与致谢
 
-Official:
-  - [ibus-rime](https://github.com/rime/ibus-rime): IBus frontend for Linux
-  - [Squirrel](https://github.com/rime/squirrel): frontend for macOS
-  - [Weasel](https://github.com/rime/weasel): frontend for Windows
+本项目基于 librime，遵循 [The 3-Clause BSD License](https://opensource.org/licenses/BSD-3-Clause)。上游项目与贡献者信息见 [librime](https://github.com/rime/librime)。
 
-<!-- Sort in alphabetical order with :sort in vim -->
-Community:
-  - [ARIF](https://www.nongnu.org/arif/): frontend for Readline
-  - [Hamster](https://github.com/imfuxiao/Hamster): frontend for iOS
-  - [My RIME](https://github.com/LibreService/my_rime): frontend for web
-  - [PIME](https://github.com/EasyIME/PIME): frontend for Windows
-  - [Trime](https://github.com/osfans/trime): frontend for Android
-  - [XIME](https://github.com/stackia/XIME): frontend for macOS
-  - [YuyanIme](https://github.com/gurecn/YuyanIme): frontend for Android
-  - [coc-rime](https://github.com/tonyfettes/coc-rime): frontend for Vim
-  - [emacs-rime](https://github.com/DogLooksGood/emacs-rime): frontend for Emacs
-  - [fcitx-rime](https://github.com/fcitx/fcitx-rime): Fcitx frontend for Linux
-  - [fcitx5-android](https://github.com/fcitx5-android/fcitx5-android): frontend for Android
-  - [fcitx5-macos](https://github.com/fcitx-contrib/fcitx5-macos): Fcitx5 frontend for macOS
-  - [fcitx5-rime](https://github.com/fcitx/fcitx5-rime): Fcitx5 frontend for Linux
-  - [fcitx5-ui.nvim](https://github.com/black-desk/fcitx5-ui.nvim): Fcitx5 frontend for Vim
-  - [fcitx5.nvim](https://github.com/tonyfettes/fcitx5.nvim): Fcitx5 frontend for Vim
-  - [pyrime](https://github.com/Freed-Wu/pyrime): frontend for Ptpython
-  - [rabbit](https://github.com/amorphobia/rabbit): frontend for Windows
-  - [rime.nvim](https://github.com/Freed-Wu/rime.nvim): frontend for Vim
-  - [rl_custom_rime](https://github.com/Freed-Wu/rl_custom_rime): frontend for Readline
-  - [tmux-rime](https://github.com/Freed-Wu/tmux-rime): frontend for Tmux
-  - [zsh-rime](https://github.com/Freed-Wu/zsh-rime): frontend for Zsh
-
-Plugins
-===
-  - [librime-charcode](https://github.com/rime/librime-charcode) (Deprecated) Module that
-    deals with character encoding; depends on boost::locale and ICU libraries
-  - [librime-legacy](https://github.com/rime/librime-legacy) (Deprecated) Legacy module with
-    GPL-licensed code
-  - [librime-lua](https://github.com/hchunhui/librime-lua) Lua scripting
-  - [librime-octagram](https://github.com/lotem/librime-octagram) Language model
-  - [librime-predict](https://github.com/rime/librime-predict) Predict next word
-  - [librime-proto](https://github.com/lotem/librime-proto) IPC using CapnProto
-
-Related works
-===
-  - [plum](https://github.com/rime/plum): Rime configuration (recipe) installer
-  - [combo-pinyin](https://github.com/rime/home/wiki/ComboPinyin): an innovative
-    chord-typing practice to input Pinyin
-  - [rime-essay](https://github.com/rime/rime-essay): the preset vocabulary
-  - [SCU](https://github.com/neolee/SCU): Squirrel Configuration Utilities
-
-Credits
-===
-We are grateful to the makers of the following open source libraries:
-
-  - [Boost C++ Libraries](http://www.boost.org/) (Boost Software License)
-  - [google-glog](https://github.com/google/glog) (The 3-Clause BSD License)
-  - [Google Test](https://github.com/google/googletest) (The 3-Clause BSD License)
-  - [LevelDB](https://github.com/google/leveldb) (The 3-Clause BSD License)
-  - [marisa-trie](https://github.com/s-yata/marisa-trie) (BSD 2-Clause License, LGPL 2.1)
-  - [OpenCC](https://github.com/BYVoid/OpenCC) (Apache License 2.0)
-  - [yaml-cpp](https://github.com/jbeder/yaml-cpp) (MIT License)
-
-Contributors
-===
-  - [佛振](https://github.com/lotem)
-  - [鄒旭](https://github.com/zouxu09)
-  - [Weng Xuetian](http://csslayer.info)
-  - [Chongyu Zhu](http://lembacon.com)
-  - [Zhiwei Liu](https://github.com/liuzhiwei)
-  - [BYVoid](http://www.byvoid.com)
-  - [雪齋](https://github.com/LEOYoon-Tsaw)
-  - [瑾昀](https://github.com/kunki)
-  - [osfans](https://github.com/osfans)
-  - [jakwings](https://github.com/jakwings)
-  - [Prcuvu](https://github.com/Prcuvu)
-  - [hchunhui](https://github.com/hchunhui)
-  - [Qijia Liu](https://github.com/eagleoflqj)
-  - [WhiredPlanck](https://github.com/WhiredPlanck)
+感谢以下开源项目：[llama.cpp](https://github.com/ggml-org/llama.cpp)、[Qwen](https://github.com/QwenLM)、[Trime](https://github.com/osfans/trime)、Boost、glog、LevelDB、marisa-trie、OpenCC、yaml-cpp。
